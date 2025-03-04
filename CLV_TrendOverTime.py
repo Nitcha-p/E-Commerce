@@ -18,8 +18,8 @@ CLV = df.groupby('Order Month')['Customer Lifetime Value (USD)'].mean().reset_in
 CLV = CLV.rename(columns={'Customer Lifetime Value (USD)': 'CLV (Monthly)'})
 
 
-'''CLV Trend Over Time using Moving Average (3 Months and 7 Months)'''
-# Calcualte Moving Average 3 months and 7 months
+'''CLV Trend Over Time using Moving Average (3 Months, 5 Months and 7 Months)'''
+# Calcualte Moving Average 3 months, 5 months and 7 months
 CLV['CLV Moving Average (3M)'] = CLV['CLV (Monthly)'].rolling(window=3, center=True).mean()
 CLV['CLV Moving Average (5M)'] = CLV['CLV (Monthly)'].rolling(window=5, center=True).mean()
 CLV['CLV Moving Average (7M)'] = CLV['CLV (Monthly)'].rolling(window=7, center=True).mean()
