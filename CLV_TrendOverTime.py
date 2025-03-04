@@ -1,6 +1,7 @@
 '''CLV Trend Over Time (Monthly)'''
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
 # Load the dataset
 df = pd.read_csv("ecommerce_customer.csv")  
@@ -23,16 +24,22 @@ CLV['CLV Moving Average (3M)'] = CLV['CLV (Monthly)'].rolling(window=3, center=T
 CLV['CLV Moving Average (5M)'] = CLV['CLV (Monthly)'].rolling(window=5, center=True).mean()
 CLV['CLV Moving Average (7M)'] = CLV['CLV (Monthly)'].rolling(window=7, center=True).mean()
 
+# Streamlit UI
+st.title("📈 CLV Trend Over Time")
+st.write("This interactive dashboard visualizes Customer Lifetime Value trends.")
+
 # Create an interactive line chart for CLV trend (3 Months)
 fig = px.line(CLV, x="Order Month", y=["CLV (Monthly)", "CLV Moving Average (3M)",'CLV Moving Average (5M)','CLV Moving Average (7M)'],
               labels={"value": "CLV (USD)", "Order Month": "Month"},
               title="<b>CLV Trend Over Time</b>",
               markers=True)
 
+
 # Center the title
 fig.update_layout(title_x=0.5)
 
-fig.show()
+# Display the Chart
+st.plotly_chart(fig)
 
 # Save CLV Dataframe to CSV
 CLV.to_csv("CLV_TrendOverTime.csv", index=False)

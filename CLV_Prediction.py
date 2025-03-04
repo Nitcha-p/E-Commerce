@@ -1,78 +1,81 @@
-from prophet import Prophet
+import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 import plotly.express as px
+from prophet import Prophet
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-# Load the dataset
-df = pd.read_csv("CLV_TrendOverTime.csv")
+# --- Streamlit App Title ---
+st.title("📊 CLV Prediction & Forecasting with Prophet")
+st.markdown("This app forecasts Customer Lifetime Value (CLV) using Prophet and automatically selects the best Moving Average window.")
 
-# Check missing values
-print(df.isnull().sum())
+# --- Load Your Own CSV ---
+df = pd.read_csv("CLV_TrendOverTime.csv")  # YOUR CSV FILE
 
-# Fill initial missing values for each column using backfill
-df.fillna(method='bfill',inplace=True)
-df.fillna(method='ffill',inplace=True)
-print(df)
+# Ensure Date column is in datetime format
+df['Order Month'] = pd.to_datetime(df['Order Month'])
 
-# เตรียมข้อมูลสำหรับ Prophet
+# Fill missing values (Backfill + Forward Fill)
+df.fillna(method='bfill', inplace=True)
+df.fillna(method='ffill', inplace=True)
+
+# --- User Input for Forecasting Period ---
+forecast_period = st.number_input("Enter the number of months to predict :", min_value=1, max_value=36, value=6)
+
+# --- Define Moving Average Windows ---
+ma_options = [1, 3, 5, 7]  # MA Windows
+results = {}
+
+# --- Function to Prepare Data ---
 def prepare_data(df, column):
     df_prophet = df[['Order Month', column]].rename(columns={'Order Month': 'ds', column: 'y'})
     return df_prophet.dropna()
 
-# ฟังก์ชันทดสอบโมเดล Prophet และคำนวณ Accuracy
-def evaluate_prophet(df, column):
+# --- Prophet Model Training & Forecasting ---
+def evaluate_prophet(df, column, forecast_period):
     data = prepare_data(df, column)
-
-    # สร้างโมเดล Prophet
     model = Prophet()
     model.fit(data)
-
-    # พยากรณ์ 6 เดือนข้างหน้า
-    future = model.make_future_dataframe(periods=6, freq='M')
+    
+    # Forecast future values
+    future = model.make_future_dataframe(periods=forecast_period, freq='M')
     forecast = model.predict(future)
 
-    # คำนวณ MAE และ RMSE
-    y_true = data['y']
-    y_pred = forecast['yhat'][:len(y_true)]
+    # Ensure we are evaluating predictions on future data only
+    y_true = df[column].iloc[-forecast_period:].values  # Last n months from dataset
+    y_pred = forecast['yhat'].iloc[-forecast_period:].values  # Future predictions
+
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 
     return forecast, mae, rmse
 
-# ทดลองกับทุกตัวแปร
-columns_to_test = ["CLV (Monthly)", "CLV Moving Average (3M)", "CLV Moving Average (5M)", "CLV Moving Average (7M)"]
-results = {}
+# --- Evaluate All Moving Averages ---
+for ma in ma_options:
+    df[f'CLV_MA_{ma}M'] = df['CLV (Monthly)'].rolling(window=ma, min_periods=1).mean()
+    forecast, mae, rmse = evaluate_prophet(df, f'CLV_MA_{ma}M', forecast_period)
+    results[ma] = {"Forecast": forecast, "MAE": mae, "RMSE": rmse}
 
-for col in columns_to_test:
-    forecast, mae, rmse = evaluate_prophet(df, col)
-    results[col] = {"Forecast": forecast, "MAE": mae, "RMSE": rmse}
+# --- Select the Best Model ---
+best_ma = min(results, key=lambda x: results[x]["RMSE"])
+best_forecast = results[best_ma]["Forecast"]
+best_mae = results[best_ma]["MAE"]
+best_rmse = results[best_ma]["RMSE"]
 
-# แสดงผลลัพธ์
-best_model = min(results, key=lambda x: results[x]["RMSE"])
-print(f"Best Model : {best_model}")
-print(f"MAE : {results[best_model]['MAE']}")
-print(f"RMSE : {results[best_model]['RMSE']}")
+# --- Display Results ---
+st.subheader("📌 Forecasting Results")
+st.write(f"✅ **Best Moving Average Model :** {best_ma} Months")
+st.write(f"📉 **MAE (Mean Absolute Error) :** {best_mae:.2f}")
+st.write(f"📊 **RMSE (Root Mean Squared Error) :** {best_rmse:.2f}")
 
-# Extract the best forecasted data
-best_forecast = results[best_model]["Forecast"][['ds', 'yhat']]
-best_forecast = best_forecast.copy()
-best_forecast.loc[:, 'ds'] = pd.to_datetime(best_forecast['ds'])
+# --- Merge Actual & Predicted Data ---
+best_forecast = best_forecast[['ds', 'yhat']].copy()
+df_actual = df[['Order Month', f'CLV_MA_{best_ma}M']].rename(columns={'Order Month': 'ds', f'CLV_MA_{best_ma}M': 'Actual CLV'})
+df_merged = df_actual.merge(best_forecast, on='ds', how='outer').rename(columns={'yhat': 'Predicted CLV'})
 
-# Extract actual CLV from the dataset
-df_actual = df[['Order Month', best_model]].rename(columns={'Order Month': 'ds', best_model: 'Actual CLV'})
-df_actual['ds'] = pd.to_datetime(df_actual['ds'])
-
-# Merge actual and predicted data
-df_merged = df_actual.merge(best_forecast, on='ds', how='outer')
-df_merged = df_merged.rename(columns={'yhat': 'Predicted CLV'})
-
-# Create an interactive chart with Actual CLV and Predicted CLV (yhat)
-fig = px.line(df_merged, x="ds", y=["Actual CLV", "Predicted CLV"],
+# --- Plot CLV Forecast ---
+st.subheader("📈 CLV Forecasting Visualization")
+fig = px.line(df_merged, x="ds", y=["Actual CLV", "Predicted CLV"], 
               labels={"ds": "Month", "value": "CLV (USD)"},
-              title="<b>Projected Customer Lifetime Value (6-Month Forecast, MA 7M)</b>")
-
-# Center the title
-fig.update_layout(title_x=0.5)
-
-fig.show()
+              title=f"<b>Projected CLV with Prophet (Next {forecast_period} Months, Best MA {best_ma}M)</b>")
+st.plotly_chart(fig, use_container_width=True)
